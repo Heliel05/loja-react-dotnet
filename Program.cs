@@ -1,6 +1,9 @@
 using exemplo02.Data;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -19,6 +22,27 @@ builder.Services.AddCors(options =>
         });
 });
 
+var chaveSecreta = Encoding.ASCII.GetBytes("EstaESuaChaveSuperSecretaMuitoLongaParaJWT");
+
+builder.Services.AddAuthentication(x =>
+{
+    x.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    x.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(x =>
+{
+    x.RequireHttpsMetadata = false;
+    x.SaveToken = true;
+    x.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(chaveSecreta),
+        ValidateIssuer = false,
+        ValidateAudience = false
+    };
+});
+builder.Services.AddAuthorization();
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -28,6 +52,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("AllowReactApp");
+
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
 

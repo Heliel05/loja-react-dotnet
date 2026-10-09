@@ -16,6 +16,15 @@ export default function ListaProdutos() {
   const API_PRODUTOS = 'http://localhost:5236/api/produtos';
   const API_CATEGORIAS = 'http://localhost:5236/api/categorias';
 
+  // Configuração do cabeçalho com o Token
+  const getHeaders = () => {
+    const token = localStorage.getItem('token');
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    };
+  };
+
   const formatarMoeda = (valor) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
@@ -25,14 +34,19 @@ export default function ListaProdutos() {
 
   const fetchData = () => {
     setLoading(true);
-    // Carregar produtos e categorias em simultâneo
+    
+    // Carregar produtos e categorias em simultâneo enviando o Token de autenticação
     Promise.all([
-      fetch(API_PRODUTOS).then(res => res.json()),
-      fetch(API_CATEGORIAS).then(res => res.json())
+      fetch(API_PRODUTOS, { headers: getHeaders() }).then(res => {
+        if (res.status === 401) throw new Error("Não autorizado");
+        return res.json();
+      }),
+      fetch(API_CATEGORIAS, { headers: getHeaders() }).then(res => res.json())
     ])
     .then(([produtosData, categoriasData]) => {
       setProdutos(produtosData);
       setCategorias(categoriasData);
+      
       // Define a primeira categoria como padrão no form, se existir
       if (categoriasData.length > 0 && !categoriaID) {
         setCategoriaID(categoriasData[0].categoriaID);
@@ -41,6 +55,9 @@ export default function ListaProdutos() {
     })
     .catch(error => {
       console.error("Erro ao carregar dados:", error);
+      if (error.message === "Não autorizado") {
+        alert("Sessão expirada ou usuário não autenticado. Faça login novamente.");
+      }
       setLoading(false);
     });
   };
@@ -77,21 +94,31 @@ export default function ListaProdutos() {
     };
 
     try {
+      let response;
       if (editingId) {
         produtoData.produtoID = editingId;
-        await fetch(`${API_PRODUTOS}/${editingId}`, {
+        response = await fetch(`${API_PRODUTOS}/${editingId}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getHeaders(), // Passa o token no PUT
           body: JSON.stringify(produtoData)
         });
       } else {
-        await fetch(API_PRODUTOS, {
+        response = await fetch(API_PRODUTOS, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getHeaders(), // Passa o token no POST
           body: JSON.stringify(produtoData)
         });
       }
-      
+
+      if (response.status === 401) {
+        alert("Você precisa estar logado para fazer isso.");
+        return;
+      }
+      if (response.status === 403) {
+        alert("Acesso negado: Você não tem permissão para realizar esta ação.");
+        return;
+      }
+
       resetForm();
       fetchData();
     } catch (error) {
@@ -111,9 +138,21 @@ export default function ListaProdutos() {
   const handleDelete = async (id) => {
     if (window.confirm("Tem a certeza que deseja eliminar este produto?")) {
       try {
-        await fetch(`${API_PRODUTOS}/${id}`, {
-          method: 'DELETE'
+        const response = await fetch(`${API_PRODUTOS}/${id}`, {
+          method: 'DELETE',
+          headers: getHeaders() // Passa o token no DELETE
         });
+
+        // Verificação de Autorização e Autenticação
+        if (response.status === 401) {
+          alert("Erro: Você não está autenticado.");
+          return;
+        }
+        if (response.status === 403) {
+          alert("Erro 403 (Proibido): Apenas Administradores podem excluir produtos!");
+          return;
+        }
+
         fetchData(); // Atualiza apenas os produtos após eliminar
       } catch (error) {
         console.error("Erro ao eliminar o produto:", error);
